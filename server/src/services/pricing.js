@@ -2,6 +2,7 @@
 
 const PROMOS = {
   MAVS10: { type: 'percent', value: 10, label: '10% off your order' },
+  MAVS20: { type: 'percent', value: 20, label: '20% off gameday gear' },
   BLUEORANGE: { type: 'percent', value: 20, label: '20% off your order' },
   GOMAVS: { type: 'flat', value: 15, minSubtotal: 75, label: '$15 off orders over $75' },
 };

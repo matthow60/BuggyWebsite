@@ -21,33 +21,37 @@ function render(cart) {
         ${EMPTY_ICON}
         <h2>Your cart is empty</h2>
         <p>Grab some blue &amp; orange before gameday.</p>
-        <a class="btn" href="/shop">Browse merch</a>
+        <a class="btn" href="/shop" data-testid="browse-merch">Browse merch</a>
       </div>`;
   } else {
     items.innerHTML = `<h2>Items</h2>` + cart.items
-      .map((i) => `
+      .map((i) => {
+        const what = Mavs.escapeHtml(`${i.name} (${i.size})`);
+        const tid = `${i.productId}-${Mavs.slug(i.size)}`;
+        return `
         <div class="line-item">
           <div class="thumb">${Mavs.art(i.art, i.color)}</div>
           <div>
             <h3>${Mavs.escapeHtml(i.name)}</h3>
             <div class="meta">Size ${Mavs.escapeHtml(i.size)} · ${Mavs.money(i.price)} each</div>
             <div class="qty">
-              <button type="button" data-qty="${i.qty - 1}" data-id="${i.productId}" data-size="${Mavs.escapeHtml(i.size)}" aria-label="Decrease">−</button>
+              <button type="button" data-qty="${i.qty - 1}" data-id="${i.productId}" data-size="${Mavs.escapeHtml(i.size)}" aria-label="Decrease" data-testid="qty-dec-${tid}" data-track="Decrease quantity · ${what}">−</button>
               <span>${i.qty}</span>
-              <button type="button" data-qty="${i.qty + 1}" data-id="${i.productId}" data-size="${Mavs.escapeHtml(i.size)}" aria-label="Increase">+</button>
+              <button type="button" data-qty="${i.qty + 1}" data-id="${i.productId}" data-size="${Mavs.escapeHtml(i.size)}" aria-label="Increase" data-testid="qty-inc-${tid}" data-track="Increase quantity · ${what}">+</button>
             </div>
           </div>
           <div>
             <div class="line-total">${Mavs.money(i.price * i.qty)}</div>
-            <button type="button" class="link-btn" data-qty="0" data-id="${i.productId}" data-size="${Mavs.escapeHtml(i.size)}">Remove</button>
+            <button type="button" class="link-btn" data-qty="0" data-id="${i.productId}" data-size="${Mavs.escapeHtml(i.size)}" data-testid="remove-${tid}" data-track="Remove ${what}">Remove</button>
           </div>
-        </div>`)
+        </div>`;
+      })
       .join('');
   }
 
   document.getElementById('summary').innerHTML = summaryHtml(cart);
   document.getElementById('promo-applied').innerHTML = cart.promo
-    ? `<div class="promo-applied"><span>✓ ${Mavs.escapeHtml(cart.promo.code)} · ${Mavs.escapeHtml(cart.promo.label)}</span><button type="button" class="link-btn" id="remove-promo">Remove</button></div>`
+    ? `<div class="promo-applied"><span>✓ ${Mavs.escapeHtml(cart.promo.code)} · ${Mavs.escapeHtml(cart.promo.label)}</span><button type="button" class="link-btn" id="remove-promo" data-testid="promo-remove" data-track="Remove promo code">Remove</button></div>`
     : '';
 }
 

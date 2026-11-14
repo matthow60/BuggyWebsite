@@ -72,7 +72,7 @@ document.getElementById('place-btn').addEventListener('click', async (e) => {
         <h1>Order placed!</h1>
         <p class="subtitle">Thanks, ${Mavs.escapeHtml(order.name)}. Order <strong>${Mavs.escapeHtml(order.orderId)}</strong> · ${Mavs.money(order.total)}</p>
         ${split}
-        <a class="btn" href="/shop" style="display:inline-block;text-decoration:none;margin-top:20px">Keep shopping</a>
+        <a class="btn" href="/shop" data-testid="keep-shopping" style="display:inline-block;text-decoration:none;margin-top:20px">Keep shopping</a>
       </div>`;
   } catch (err) {
     Mavs.showError(err);

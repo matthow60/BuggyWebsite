@@ -20,7 +20,7 @@ function cardHtml(p) {
     .map((label) => {
       const soldOut = stockByLabel[label] === 0;
       const isSel = selected[p.id] === label;
-      return `<button type="button" class="size${soldOut ? ' soldout' : ''}${isSel ? ' selected' : ''}" data-product="${p.id}" data-size="${label}">${label}</button>`;
+      return `<button type="button" class="size${soldOut ? ' soldout' : ''}${isSel ? ' selected' : ''}" data-product="${p.id}" data-size="${label}" data-testid="size-${p.id}-${Mavs.slug(label)}" data-track="Select size ${label} · ${Mavs.escapeHtml(p.name)}">${label}</button>`;
     })
     .join('');
 
@@ -39,7 +39,7 @@ function cardHtml(p) {
           <div class="size-label">Size</div>
           <div class="sizes">${sizes}</div>
         </div>
-        <button type="button" class="btn block" data-add="${p.id}">Add to cart</button>
+        <button type="button" class="btn block" data-add="${p.id}" data-testid="add-${p.id}" data-track="Add ${Mavs.escapeHtml(p.name)} to cart">Add to cart</button>
       </div>
     </article>`;
 }

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Checkout · Mavs Merch</title>
   <link rel="stylesheet" href="/assets/styles.css" />
+  <script src="/sdk/recorder.js"></script>
 </head>
 <body>
   <header id="site-header"></header>
@@ -16,19 +17,19 @@
         <h2>Your details</h2>
         <div class="field">
           <label for="name">Name</label>
-          <input class="input" id="name" placeholder="Maverick Student" autocomplete="name" />
+          <input class="input" id="name" data-testid="name-input" placeholder="Maverick Student" autocomplete="name" />
         </div>
         <div class="field">
           <label for="email">UTA email</label>
-          <input class="input" id="email" type="email" placeholder="you@mavs.uta.edu" autocomplete="email" />
+          <input class="input" id="email" data-testid="email-input" type="email" placeholder="you@mavs.uta.edu" autocomplete="email" />
         </div>
         <div class="divider"></div>
         <h2>Split payment with friends</h2>
         <div class="field">
           <label for="payers">Friends splitting with you</label>
           <div class="inline">
-            <input class="input" id="payers" placeholder="e.g. Alex, Jordan, Sam" autocomplete="off" />
-            <button class="btn secondary" type="button" id="split-btn">Calculate split</button>
+            <input class="input" id="payers" data-testid="payers-input" placeholder="e.g. Alex, Jordan, Sam" autocomplete="off" />
+            <button class="btn secondary" type="button" id="split-btn" data-testid="split-button" data-track="Calculate split">Calculate split</button>
           </div>
           <span class="hint">Separate names with commas. You cover any leftover cents.</span>
           <div class="split-result" id="split-result"></div>
@@ -37,7 +38,7 @@
       <aside class="panel">
         <h2>Order summary</h2>
         <div id="summary"><div class="skeleton" style="height:140px"></div></div>
-        <button class="btn block" type="button" id="place-btn" style="margin-top:16px">Place order</button>
+        <button class="btn block" type="button" id="place-btn" data-testid="place-order" data-track="Place order" style="margin-top:16px">Place order</button>
       </aside>
     </div>
   </main>

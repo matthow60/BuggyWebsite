@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Cart · Mavs Merch</title>
   <link rel="stylesheet" href="/assets/styles.css" />
+  <script src="/sdk/recorder.js"></script>
 </head>
 <body>
   <header id="site-header"></header>
@@ -18,14 +19,14 @@
         <form class="field" id="promo-form" autocomplete="off">
           <label for="promo">Promo code</label>
           <div class="inline">
-            <input class="input" id="promo" placeholder="e.g. MAVS10" />
-            <button class="btn secondary" type="submit">Apply</button>
+            <input class="input" id="promo" data-testid="promo-input" placeholder="e.g. MAVS10" />
+            <button class="btn secondary" type="submit" data-testid="promo-apply" data-track="Apply promo code">Apply</button>
           </div>
           <div id="promo-applied"></div>
         </form>
         <div class="divider"></div>
         <div id="summary"></div>
-        <a class="btn block" href="/checkout" style="display:block;text-align:center;text-decoration:none;margin-top:16px">Continue to checkout</a>
+        <a class="btn block" href="/checkout" data-testid="checkout-link" data-track="Continue to checkout" style="display:block;text-align:center;text-decoration:none;margin-top:16px">Continue to checkout</a>
       </aside>
     </div>
   </main>

@@ -9,6 +9,7 @@ const Mavs = (() => {
   }
 
   function sessionId() {
+    if (window.MavsRecorder) return window.MavsRecorder.sessionId();
     try {
       let id = localStorage.getItem(SESSION_KEY);
       if (!id) {
@@ -43,6 +44,11 @@ const Mavs = (() => {
     return data;
   }
 
+  // Safe piece for a data-testid, e.g. "One Size" -> "One-Size".
+  function slug(s) {
+    return String(s).trim().replace(/[^A-Za-z0-9_-]+/g, '-');
+  }
+
   function money(n) {
     return '$' + Number(n || 0).toFixed(2);
   }
@@ -68,9 +74,9 @@ const Mavs = (() => {
 
   function showError(err) {
     if (err.status >= 500) {
-      const name = (err.data && err.data.name) || 'Error';
-      toast(`<code>${escapeHtml(name)}: ${escapeHtml(err.message)}</code>`, 'error', `Server error ${err.status}`);
-      console.error('Server stack:', err.data && err.data.stack);
+      // The recorder SDK already shows the "our team has been notified (incident-…)" toast.
+      console.error(`Server error ${err.status}: ${err.message}`, err.data);
+      if (!window.MavsRecorder) toast(`<code>${escapeHtml(err.message)}</code>`, 'error', `Server error ${err.status}`);
     } else if (err.status) {
       toast(escapeHtml(err.message), 'warn');
     } else {
@@ -82,11 +88,11 @@ const Mavs = (() => {
   function renderHeader(active) {
     const header = document.getElementById('site-header');
     const link = (href, label, icon, extra = '') =>
-      `<a href="${href}" class="${active === href.slice(1) ? 'active' : ''}">${icon}<span class="label">${label}</span>${extra}</a>`;
+      `<a href="${href}" class="${active === href.slice(1) ? 'active' : ''}" data-testid="nav-${href.slice(1)}" data-track="Go to ${label}">${icon}<span class="label">${label}</span>${extra}</a>`;
     header.innerHTML = `
       <div class="site-header">
         <div class="inner">
-          <a class="brand" href="/shop">
+          <a class="brand" href="/shop" data-testid="nav-logo" data-track="Go to Shop (logo)">
             <span class="brand-mark">M</span>
             <span>MAVS MERCH<small>UT ARLINGTON</small></span>
           </a>
@@ -171,5 +177,5 @@ const Mavs = (() => {
     return `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${shapes[type] || shapes.tee}</svg>`;
   }
 
-  return { api, money, escapeHtml, toast, showError, renderHeader, setCount, refreshCount, art };
+  return { api, money, slug, escapeHtml, toast, showError, renderHeader, setCount, refreshCount, art };
 })();

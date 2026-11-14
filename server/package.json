@@ -5,12 +5,20 @@
   "main": "index.js",
   "private": true,
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "check-actions": "node scripts/check-actions.js",
+    "reset-demo": "node scripts/reset-demo.js",
+    "seed-incident": "node scripts/seed-incident.js",
+    "retry-webhook": "node scripts/retry-webhook.js",
+    "mock-webhook": "node scripts/mock-webhook.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=18.17"
   },
   "dependencies": {
-    "express": "4.21.2"
+    "dotenv": "16.4.5",
+    "express": "4.21.2",
+    "express-async-errors": "3.1.1",
+    "mongodb": "6.10.0"
   }
 }
