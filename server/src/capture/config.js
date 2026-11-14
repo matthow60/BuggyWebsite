@@ -1,10 +1,11 @@
-// Settings for crash capture. Everything comes from environment variables
-// (server/.env is loaded if it exists; it is git-ignored, so a fresh clone has none).
+// Settings for crash reporting. Everything comes from environment variables
+// (a local .env is loaded if it exists: server/.env or the repo-root .env; both are git-ignored).
 //
-// Capture is ON only when CAPTURE_ENABLED=1 and MONGODB_URI are both set, and it is
-// forced OFF inside the AutomatedFix patcher's sandbox. The patcher starts this app
-// with its own environment (including its MONGODB_URI), and its change stream starts a
-// new run for every inserted incident, so capturing there would loop forever.
+// Crash reporting is ON only when CRASH_REPORT_MONGODB_URI is set and AUTOFIX_REPLAY is not.
+//
+// Why not MONGODB_URI: the AutoFix engine starts a copy of this app to replay a crash and
+// passes its own MONGODB_URI to it. If we reported with that variable, every replay crash
+// would create a new incident and the engine would loop forever.
 
 const fs = require('fs');
 const path = require('path');
@@ -13,9 +14,11 @@ const { execSync } = require('child_process');
 const SERVER_DIR = path.resolve(__dirname, '..', '..');
 const REPO_ROOT = path.resolve(SERVER_DIR, '..');
 
-const envFile = path.join(SERVER_DIR, '.env');
-if (fs.existsSync(envFile)) {
-  require('dotenv').config({ path: envFile, quiet: true });
+for (const envFile of [path.join(SERVER_DIR, '.env'), path.join(REPO_ROOT, '.env')]) {
+  if (fs.existsSync(envFile)) {
+    // Never overrides variables that are already set (e.g. ones the engine passes in).
+    require('dotenv').config({ path: envFile, quiet: true });
+  }
 }
 
 function git(args) {
@@ -30,21 +33,12 @@ function stripCredentials(url) {
   return url ? url.replace(/\/\/[^@/]+@/, '//') : null;
 }
 
-function isTruthy(value) {
-  return /^(1|true|yes|on)$/i.test(String(value || '').trim());
-}
-
-const mongoUri = process.env.MONGODB_URI || null;
-
-// Variables the patcher always has (see AutomatedFix/.env.example) and this app never needs.
-const PATCHER_MARKERS = ['TARGET_REPO', 'TARGET_OWNER', 'TARGET_START_CMD', 'LLM_MODE'];
-const inPatcherSandbox = PATCHER_MARKERS.some((name) => process.env[name]);
+const mongoUri = (process.env.CRASH_REPORT_MONGODB_URI || '').trim() || null;
+const isReplay = Boolean(process.env.AUTOFIX_REPLAY);
 
 function captureState() {
-  if (inPatcherSandbox) return { on: false, why: 'running inside the AutomatedFix patcher sandbox' };
-  if (isTruthy(process.env.CAPTURE_DISABLED)) return { on: false, why: 'CAPTURE_DISABLED is set' };
-  if (!isTruthy(process.env.CAPTURE_ENABLED)) return { on: false, why: 'CAPTURE_ENABLED=1 is not set' };
-  if (!mongoUri) return { on: false, why: 'MONGODB_URI is not set' };
+  if (isReplay) return { on: false, why: 'AUTOFIX_REPLAY is set (engine replay)' };
+  if (!mongoUri) return { on: false, why: 'CRASH_REPORT_MONGODB_URI is not set' };
   return { on: true, why: null };
 }
 const capture = captureState();
@@ -52,28 +46,21 @@ const capture = captureState();
 const config = {
   serverDir: SERVER_DIR,
   repoRoot: REPO_ROOT,
-  // Stack frames are reported relative to the repo root; the first one under this prefix is the top frame.
-  sourcePrefix: 'server/src/',
 
   mongoUri,
-  dbName: process.env.MONGODB_DB || 'hackuta',
-  incidentsCollection: process.env.MONGODB_COLLECTION || 'incidents',
+  dbName: 'hackuta',
+  incidentsCollection: 'incidents',
   captureEnabled: capture.on,
   captureOffReason: capture.why,
 
-  // Optional. AutomatedFix does NOT need it: its patcher picks up new incidents from a
-  // MongoDB change stream. Leave WEBHOOK_URL empty unless a teammate asks for it.
+  // Optional push notification after an incident is saved. The engine does NOT need it.
   webhookUrl: process.env.WEBHOOK_URL || null,
   webhookSecret: process.env.WEBHOOK_SECRET || null,
   webhookRetries: 3, // retries after the first attempt
   webhookTimeoutMs: 5000,
 
-  // How long the user's 500 response waits for the incident ID before giving up on it.
-  respondTimeoutMs: 2500,
-
   maxActions: 15,
 
-  app: { name: 'mavs-merch-store', node: process.version },
   repo: {
     url: stripCredentials(process.env.REPO_URL || git('config --get remote.origin.url')),
     commit: process.env.GIT_COMMIT || git('rev-parse HEAD'),

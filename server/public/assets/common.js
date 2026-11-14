@@ -9,7 +9,7 @@ const Mavs = (() => {
   }
 
   function sessionId() {
-    if (window.MavsRecorder) return window.MavsRecorder.sessionId();
+    if (window.AutofixRecorder) return window.AutofixRecorder.sessionId();
     try {
       let id = localStorage.getItem(SESSION_KEY);
       if (!id) {
@@ -76,7 +76,7 @@ const Mavs = (() => {
     if (err.status >= 500) {
       // The recorder SDK already shows the "our team has been notified (incident-…)" toast.
       console.error(`Server error ${err.status}: ${err.message}`, err.data);
-      if (!window.MavsRecorder) toast(`<code>${escapeHtml(err.message)}</code>`, 'error', `Server error ${err.status}`);
+      if (!window.AutofixRecorder) toast(`<code>${escapeHtml(err.message)}</code>`, 'error', `Server error ${err.status}`);
     } else if (err.status) {
       toast(escapeHtml(err.message), 'warn');
     } else {
