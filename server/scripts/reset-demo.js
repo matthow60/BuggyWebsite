@@ -1,10 +1,9 @@
 #!/usr/bin/env node
-// Resets the demo: deletes all incidents, resets the incident-#### counter, and checks
-// that the three bugs still crash, both in this checkout and on origin/main.
+// Resets the demo: deletes all incidents and checks that the three bugs still crash,
+// both in this checkout and on origin/main.
 //
 //   npm --prefix server run reset-demo              (asks before deleting)
 //   npm --prefix server run reset-demo -- --yes     (no prompt)
-//   npm --prefix server run reset-demo -- --start 0 (next incident is incident-0001; default start 41 -> incident-0042)
 //   npm --prefix server run reset-demo -- --check-only
 
 const fs = require('fs');
@@ -16,10 +15,6 @@ const config = require('../src/capture/config');
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
-const option = (name, fallback) => {
-  const i = args.indexOf(name);
-  return i >= 0 && args[i + 1] !== undefined ? args[i + 1] : fallback;
-};
 
 const SERVICES = 'server/src/services';
 const BUGS = [
@@ -108,14 +103,13 @@ function confirm(question) {
 
 async function resetDatabase() {
   if (!config.mongoUri) {
-    console.log('MONGODB_URI is not set (server/.env), skipping the database reset.');
+    console.log('CRASH_REPORT_MONGODB_URI is not set (.env), skipping the database reset.');
     return;
   }
   const { collections, close } = require('../src/capture/db');
   try {
-    const { incidents, counters } = await collections();
+    const { incidents } = await collections();
     const count = await incidents.countDocuments();
-    const start = Number(option('--start', 41));
 
     if (!flag('--yes')) {
       const go = await confirm(`Delete all ${count} incidents in ${config.dbName}.${config.incidentsCollection}? [y/N] `);
@@ -125,8 +119,7 @@ async function resetDatabase() {
       }
     }
     await incidents.deleteMany({});
-    await counters.updateOne({ _id: 'incident' }, { $set: { seq: start } }, { upsert: true });
-    console.log(`Deleted ${count} incidents. Next incident: incident-${String(start + 1).padStart(4, '0')}`);
+    console.log(`Deleted ${count} incidents.`);
   } finally {
     await close();
   }

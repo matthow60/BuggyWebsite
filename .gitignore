@@ -147,3 +147,9 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# IntelliJ (per-user files)
+.idea/workspace.xml
+.idea/shelf/
+.idea/usage.statistics.xml
+.idea/tasks.xml

@@ -14,7 +14,7 @@ db.getCollection('incidents')
       createdAt: 1,
       'error.message': 1,
       actionCount: { $size: { $ifNull: ['$actions', []] } },
-      actions: { type: 1, label: 1, target: 1, value: 1, url: 1, t: 1 },
+      actions: { type: 1, target: 1, value: 1, url: 1, t: 1 },
     }
   )
   .sort({ createdAt: -1 })

@@ -1,38 +1,34 @@
 /*
- * Crash recorder SDK. Load it on every page, in <head>, before other scripts:
+ * AutoFix crash recorder. Load it on every page, in <head>, before other scripts:
  *   <script src="/sdk/recorder.js"></script>
  *
- * 1. Records the user's LAST 15 ACTIONS (navigate, click, input) in sessionStorage, so they
- *    survive the real page loads between /shop, /cart and /checkout.
- * 2. Adds X-Session-Id and X-User-Actions (base64 JSON) to every same-origin /api/* fetch,
- *    so a crashing request carries its own history and the server saves it in one write.
- * 3. Shows a friendly "our team has been notified (incident-0042)" toast when an API call returns 5xx.
+ * 1. Records the user's LAST 15 ACTIONS in sessionStorage (survives page navigations).
+ * 2. Sends them with every same-origin /api/* fetch in the `x-autofix-actions` header (JSON string),
+ *    so the server can save them with the incident if that request crashes.
+ * 3. Shows a friendly toast when an API call returns 5xx.
  *
- * Action shape (the format AutomatedFix replays in a headless browser and shows on the dashboard):
- *   { t, type, target, value, url, label }
- *     t       epoch milliseconds
- *     type    'navigate' | 'click' | 'input'
- *     target  CSS selector, e.g. [data-testid="promo-apply"] (null for navigate)
- *     value   typed value, inputs only (passwords, cards and emails are "•••")
- *     url     path + query of the page, e.g. /cart
- *     label   readable text for people, e.g. "Apply promo code"
+ * Action shape (the AutoFix engine replays these in a headless browser; do not change it):
+ *   { t, type, target, value, url }
+ *     t       Date.now() epoch milliseconds
+ *     type    'navigate' | 'click' | 'input' | 'select' | 'check' | 'uncheck' | 'submit' | 'keypress'
+ *     target  CSS selector, preferring [data-testid="..."]; null for navigate
+ *     value   final value for input/select (passwords are '***'), else null
+ *     url     location.href of the page the action happened on
+ *   keypress is recorded for Enter only.
  *
- * Give every interactive element a data-testid (stable selector for replay) and,
- * optionally, a data-track (readable label).
+ * Give every interactive element a data-testid: it is the selector used on replay.
  */
 (function () {
   'use strict';
-  if (window.MavsRecorder) return;
+  if (window.AutofixRecorder) return;
 
   var SESSION_KEY = 'mavs-session-id';
+  var ACTIONS_KEY = 'autofix-actions';
+  var MAX_ACTIONS = 15;
   var MAX_HEADER_CHARS = 12000; // stays well under Node's 16 KB header limit
+  var memoryActions = [];
 
-  // ---------- small helpers ----------
-  function clip(value, max) {
-    var s = String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
-    return s.length > max ? s.slice(0, max - 1) + '…' : s;
-  }
-
+  // ---------- helpers ----------
   function esc(s) {
     return window.CSS && CSS.escape ? CSS.escape(s) : String(s).replace(/[^\w-]/g, '\\$&');
   }
@@ -55,18 +51,6 @@
     }
   }
 
-  // ╔═══════════════════════════════════════════════════════════════════════════════════╗
-  // ║  RECORDS THE USER'S LAST 15 ACTIONS                                               ║
-  // ║  Everything between this banner and "END: USER'S LAST 15 ACTIONS" below.          ║
-  // ║  Storage: sessionStorage["mavs-recorder-actions"], oldest first, max 15 entries.  ║
-  // ╚═══════════════════════════════════════════════════════════════════════════════════╝
-  var MAX_ACTIONS = 15;
-  var ACTIONS_KEY = 'mavs-recorder-actions';
-  var LIMIT = { label: 60, value: 60, url: 200 };
-  var MASK = '•••';
-  var SENSITIVE_RE = /pass|card|cc-|cvv|cvc|csc|secret|ssn|\bpin\b/i;
-  var memoryActions = [];
-
   function getActions() {
     try {
       var stored = JSON.parse(sessionStorage.getItem(ACTIONS_KEY) || 'null');
@@ -86,12 +70,8 @@
     }
   }
 
-  function currentUrl() {
-    return clip(location.pathname + location.search + location.hash, LIMIT.url);
-  }
-
-  // A selector the patcher can replay. Most stable first; never shortened.
-  function replaySelector(el) {
+  // A selector the engine can replay. data-testid first; never shortened.
+  function selectorFor(el) {
     var testId = el.getAttribute('data-testid');
     if (testId) return '[data-testid="' + attrValue(testId) + '"]';
     if (el.id) return '#' + esc(el.id);
@@ -99,7 +79,7 @@
     if (name && document.querySelectorAll(el.tagName + '[name="' + attrValue(name) + '"]').length === 1) {
       return el.tagName.toLowerCase() + '[name="' + attrValue(name) + '"]';
     }
-    // Fallback: a path up to the nearest ancestor with a test id or id.
+    // Last resort: a path up to the nearest ancestor with a test id or id.
     var parts = [];
     var node = el;
     while (node && node.nodeType === 1 && node !== document.body) {
@@ -126,84 +106,118 @@
     return parts.join(' > ') || el.tagName.toLowerCase();
   }
 
-  function clickLabel(el) {
-    return clip(
-      el.getAttribute('data-track') || el.getAttribute('aria-label') || el.innerText || el.value || el.title || el.tagName.toLowerCase(),
-      LIMIT.label
-    );
+  function inputType(el) {
+    return (el.getAttribute('type') || '').toLowerCase();
   }
 
-  function fieldLabel(el) {
-    var explicit = el.getAttribute('data-track') || el.getAttribute('aria-label');
-    if (explicit) return clip(explicit, LIMIT.label);
-    if (el.id) {
-      var forLabel = document.querySelector('label[for="' + attrValue(el.id) + '"]');
-      if (forLabel) return clip(forLabel.innerText, LIMIT.label);
-    }
-    var wrap = el.closest('label');
-    if (wrap) return clip(wrap.innerText, LIMIT.label);
-    return clip(el.placeholder || el.name || el.id || el.tagName.toLowerCase(), LIMIT.label);
+  function isToggle(el) {
+    var type = inputType(el);
+    return el.tagName === 'INPUT' && (type === 'checkbox' || type === 'radio');
   }
 
-  function isSensitive(el) {
-    var type = (el.getAttribute('type') || '').toLowerCase();
-    if (type === 'password' || type === 'email') return true;
-    var hints = [el.name, el.id, el.getAttribute('autocomplete'), el.placeholder].join(' ');
-    return SENSITIVE_RE.test(hints) || /email/i.test(el.getAttribute('autocomplete') || '');
+  function isTextField(el) {
+    if (el.tagName === 'TEXTAREA') return true;
+    if (el.tagName !== 'INPUT') return false;
+    return !/^(checkbox|radio|submit|button|reset|image|file|hidden|range|color)$/.test(inputType(el));
   }
 
   function fieldValue(el) {
-    if (isSensitive(el)) return MASK;
-    var type = (el.getAttribute('type') || '').toLowerCase();
-    if (type === 'checkbox' || type === 'radio') return el.checked ? 'true' : 'false';
-    return clip(el.value, LIMIT.value); // for <select> this is the option value, which replay selects by
+    if (inputType(el) === 'password') return '***'; // never record passwords
+    return String(el.value == null ? '' : el.value);
   }
 
   // Adds one action and keeps only the newest 15.
-  function record(action) {
-    var entry = {
-      t: Date.now(),
-      type: action.type,
-      target: action.type === 'navigate' ? null : action.target || null,
-      value: action.type === 'input' ? (action.value == null ? '' : String(action.value)) : null,
-      url: currentUrl(),
-      label: clip(action.label, LIMIT.label),
-    };
+  function record(type, target, value) {
     var list = getActions();
-    list.push(entry);
+    list.push({
+      t: Date.now(),
+      type: type,
+      target: type === 'navigate' ? null : target || null,
+      value: type === 'input' || type === 'select' ? (value == null ? '' : String(value)) : null,
+      url: location.href,
+    });
     saveActions(list.slice(-MAX_ACTIONS));
   }
 
-  // CLICK: capture phase on document, only on things a user can actually click.
+  // ---------- RECORDING ----------
+  var lastValues = {}; // selector -> last recorded value, so change + Enter don't record twice
+  var lastSubmitTrigger = 0; // time of a recorded click/Enter that submits a form
+  var lastEnter = { form: null, t: 0 }; // last recorded Enter inside a form
+
+  function recordField(el) {
+    var target = selectorFor(el);
+    var value = fieldValue(el);
+    if (lastValues[target] === value) return;
+    lastValues[target] = value;
+    record(el.tagName === 'SELECT' ? 'select' : 'input', target, value);
+  }
+
+  // CLICK: only on things a user can actually click. Fields and toggles are recorded on change.
   var CLICKABLE =
-    '[data-testid], [data-track], button, a, [role="button"], input[type="submit"], input[type="button"], ' +
-    'input[type="checkbox"], input[type="radio"], label, summary';
+    '[data-testid], button, a, [role="button"], input[type="submit"], input[type="button"], input[type="image"], label, summary';
 
   document.addEventListener(
     'click',
     function (e) {
       var el = e.target && e.target.closest ? e.target.closest(CLICKABLE) : null;
       if (!el) return; // ignore clicks on empty space so they don't push real steps out
-      if (el.matches('input[type="text"], input:not([type]), textarea, select')) return; // recorded on change
-      record({ type: 'click', target: replaySelector(el), label: clickLabel(el) });
+      if (el.tagName === 'SELECT' || el.tagName === 'FORM' || isTextField(el) || isToggle(el)) return;
+      if (el.tagName === 'LABEL' && el.control) return; // the control's own change is recorded
+      var submits = el.form && (el.type === 'submit' || el.type === 'image');
+      // Enter in a field makes the browser fire a synthetic click on the form's submit button;
+      // the Enter keypress is already recorded, so recording this too would submit twice on replay.
+      if (submits && e.detail === 0 && lastEnter.form === el.form && Date.now() - lastEnter.t < 500) return;
+      if (submits) lastSubmitTrigger = Date.now();
+      record('click', selectorFor(el));
     },
     true
   );
 
-  // INPUT: the "change" event (once per edit, not every keystroke).
+  // INPUT / SELECT / CHECK / UNCHECK: the "change" event (fires once per edit, on commit/blur).
   document.addEventListener(
     'change',
     function (e) {
       var el = e.target;
-      if (!el || !/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) return;
-      record({ type: 'input', target: replaySelector(el), value: fieldValue(el), label: fieldLabel(el) });
+      if (!el || !el.tagName) return;
+      if (isToggle(el)) {
+        record(el.checked ? 'check' : 'uncheck', selectorFor(el));
+      } else if (el.tagName === 'SELECT' || isTextField(el)) {
+        recordField(el);
+      }
     },
     true
   );
 
-  // NAVIGATE: every page load, back/forward, and hash changes.
+  // KEYPRESS: Enter in a text field (commits the typed value first, since change may not have fired yet).
+  document.addEventListener(
+    'keydown',
+    function (e) {
+      if (e.key !== 'Enter' || e.isComposing) return;
+      var el = e.target;
+      if (!el || el.tagName !== 'INPUT' || !isTextField(el)) return;
+      recordField(el);
+      if (el.form) {
+        lastSubmitTrigger = Date.now();
+        lastEnter = { form: el.form, t: Date.now() };
+      }
+      record('keypress', selectorFor(el));
+    },
+    true
+  );
+
+  // SUBMIT: only when no recorded click/Enter caused it, so replay doesn't submit twice.
+  document.addEventListener(
+    'submit',
+    function (e) {
+      if (Date.now() - lastSubmitTrigger < 1000) return;
+      if (e.target && e.target.tagName === 'FORM') record('submit', selectorFor(e.target));
+    },
+    true
+  );
+
+  // NAVIGATE: every page load, back/forward, hash changes and history route changes.
   function recordNavigate() {
-    record({ type: 'navigate', label: document.title || currentUrl() });
+    record('navigate', null);
   }
   recordNavigate();
   window.addEventListener('popstate', recordNavigate);
@@ -211,66 +225,57 @@
   window.addEventListener('pageshow', function (e) {
     if (e.persisted) recordNavigate(); // restored from the back/forward cache
   });
+  ['pushState', 'replaceState'].forEach(function (name) {
+    var original = history[name];
+    if (typeof original !== 'function') return;
+    history[name] = function () {
+      var before = location.href;
+      var result = original.apply(this, arguments);
+      if (location.href !== before) recordNavigate();
+      return result;
+    };
+  });
 
-  // Packs the last 15 actions for the X-User-Actions header (UTF-8 → base64 JSON).
-  function toBase64(str) {
-    var bytes = new TextEncoder().encode(str);
-    var bin = '';
-    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-    return btoa(bin);
+  // Header value: JSON with non-ASCII escaped as \uXXXX (header values must be Latin-1;
+  // JSON.parse on the server turns the escapes back into the same characters).
+  function toHeaderJson(list) {
+    return JSON.stringify(list).replace(/[\u007f-￿]/g, function (c) {
+      return '\\u' + ('0000' + c.charCodeAt(0).toString(16)).slice(-4);
+    });
   }
 
   function encodeActions() {
     var list = getActions().slice(-MAX_ACTIONS);
-    var encoded = toBase64(JSON.stringify(list));
+    var encoded = toHeaderJson(list);
     while (encoded.length > MAX_HEADER_CHARS && list.length) {
       list.shift(); // drop the oldest until it fits
-      encoded = toBase64(JSON.stringify(list));
+      encoded = toHeaderJson(list);
     }
     return encoded;
   }
-  // ╔═══════════════════════════════════════════════════════════════════════════════════╗
-  // ║  END: USER'S LAST 15 ACTIONS                                                      ║
-  // ╚═══════════════════════════════════════════════════════════════════════════════════╝
 
   // ---------- toast ----------
   function toast(message) {
-    if (!document.getElementById('mavs-recorder-style')) {
+    if (!document.getElementById('autofix-recorder-style')) {
       var style = document.createElement('style');
-      style.id = 'mavs-recorder-style';
+      style.id = 'autofix-recorder-style';
       style.textContent =
-        '.mavs-rec-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647;' +
+        '.autofix-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647;' +
         'max-width:calc(100vw - 32px);background:#1b1f27;color:#fff;padding:12px 18px;border-radius:12px;' +
         'font:600 14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.3);' +
-        'border-left:5px solid #ff5a5a;animation:mavs-rec-in .2s ease}' +
-        '@keyframes mavs-rec-in{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}';
+        'border-left:5px solid #ff5a5a;animation:autofix-in .2s ease}' +
+        '@keyframes autofix-in{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}';
       document.head.appendChild(style);
     }
     var el = document.createElement('div');
-    el.className = 'mavs-rec-toast';
+    el.className = 'autofix-toast';
     el.setAttribute('role', 'alert');
+    el.setAttribute('data-testid', 'crash-toast');
     el.textContent = message;
     document.body.appendChild(el);
     setTimeout(function () {
       el.remove();
     }, 7000);
-  }
-
-  function notifyCrash(res, url) {
-    res
-      .json()
-      .catch(function () {
-        return {};
-      })
-      .then(function (data) {
-        var id = data && data.incidentId;
-        toast(
-          id
-            ? 'Something went wrong — our team has been notified (' + id + ').'
-            : 'Something went wrong. Please try again in a moment.'
-        );
-        window.dispatchEvent(new CustomEvent('mavs:crash', { detail: { incidentId: id || null, status: res.status, url: url } }));
-      });
   }
 
   // ---------- fetch wrapper: attaches the actions to every /api/* call ----------
@@ -291,25 +296,29 @@
       var headers = new Headers(opts.headers || (input instanceof Request ? input.headers : undefined));
       if (!headers.has('X-Session-Id')) headers.set('X-Session-Id', sessionId());
       try {
-        headers.set('X-User-Actions', encodeActions());
+        headers.set('x-autofix-actions', encodeActions());
       } catch (e) {
         /* never block the request because of the recorder */
       }
       opts.headers = headers;
 
       return nativeFetch(input, opts).then(function (res) {
-        if (res.status >= 500) notifyCrash(res.clone(), url.pathname);
+        if (res.status >= 500) {
+          toast('Something went wrong — our team has been notified.');
+          window.dispatchEvent(new CustomEvent('autofix:crash', { detail: { status: res.status, url: url.pathname } }));
+        }
         return res;
       });
     };
   }
 
-  window.MavsRecorder = {
+  window.AutofixRecorder = {
     sessionId: sessionId,
     getActions: getActions,
     record: record,
     clear: function () {
       saveActions([]);
+      lastValues = {};
     },
   };
 })();

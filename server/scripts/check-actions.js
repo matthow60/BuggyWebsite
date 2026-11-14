@@ -3,13 +3,15 @@
 // the last 15 actions really reached MongoDB. Read-only.
 //
 //   npm --prefix server run check-actions              newest incident
-//   npm --prefix server run check-actions incident-0042     a specific incident
+//   npm --prefix server run check-actions <incidentId>      a specific incident
 
 const config = require('../src/capture/config');
 const { collections, close } = require('../src/capture/db');
 
+const TYPES = ['navigate', 'click', 'input', 'select', 'check', 'uncheck', 'submit', 'keypress'];
+
 (async () => {
-  if (!config.mongoUri) throw new Error('MONGODB_URI is not set in server/.env');
+  if (!config.mongoUri) throw new Error('CRASH_REPORT_MONGODB_URI is not set (.env)');
   const id = process.argv[2];
   try {
     const { incidents } = await collections();
@@ -29,8 +31,8 @@ const { collections, close } = require('../src/capture/db');
     console.log(`\nactions stored: ${actions.length} (max 15, oldest first)\n`);
     actions.forEach((a, i) => {
       const when = a.t ? new Date(a.t).toLocaleTimeString() : '?';
-      const value = a.type === 'input' ? `  = "${a.value}"` : '';
-      console.log(`${String(i + 1).padStart(2)}. ${when}  ${a.type.padEnd(8)} ${a.label || ''}${value}`);
+      const value = a.value != null ? `  = "${a.value}"` : '';
+      console.log(`${String(i + 1).padStart(2)}. ${when}  ${String(a.type).padEnd(8)}${value}`);
       console.log(`      target: ${a.target || '(none)'}   url: ${a.url}`);
     });
 
@@ -38,9 +40,10 @@ const { collections, close } = require('../src/capture/db');
     if (actions.length === 0) problems.push('no actions were stored (was the page loaded with /sdk/recorder.js?)');
     if (actions.length > 15) problems.push('more than 15 actions stored');
     actions.forEach((a, i) => {
-      if (!['navigate', 'click', 'input'].includes(a.type)) problems.push(`step ${i + 1}: unknown type "${a.type}"`);
+      if (!TYPES.includes(a.type)) problems.push(`step ${i + 1}: unknown type "${a.type}"`);
       if (a.type !== 'navigate' && !a.target) problems.push(`step ${i + 1}: no target selector, the patcher can't replay it`);
       if (typeof a.t !== 'number') problems.push(`step ${i + 1}: t is not a timestamp`);
+      if (a.target && !a.target.includes('data-testid')) problems.push(`step ${i + 1}: target "${a.target}" is not a data-testid selector`);
     });
     console.log(problems.length ? `\nPROBLEMS:\n - ${problems.join('\n - ')}` : '\nOK: actions look complete and replayable.');
     if (problems.length) process.exitCode = 1;

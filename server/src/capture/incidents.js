@@ -1,101 +1,53 @@
-// Saves crashes to MongoDB, one document per distinct bug, in the schema AutomatedFix reads
-// (patcher/README.md "What the target app must do" and lib/incident.js):
+// Builds and saves crash incidents in the exact format the AutoFix engine and dashboard read.
+// Database `hackuta`, collection `incidents`, one document per crash:
 //
 //   {
-//     _id: 'incident-0042', incidentId: 'incident-0042', status: 'open', createdAt, route,
-//     error:   { message, name, stack, file, line },   // patcher parses `stack` to find the file
-//     actions: [{ t, type, target, value, url, label }],  // the user's last 15 actions
-//     request: { method, path, query, body, headers },   // the request that returned 500
-//     fingerprint, occurrences, lastSeenAt, updatedAt, source, topFrame, repo, app
+//     incidentId: 'incident-1794690435150-k3x9',
+//     status: 'open',                  // the engine only picks up "open"
+//     createdAt: Date,
+//     route: 'POST /cart/promo',
+//     error:   { message, stack, file, line },   // file/line = top in-repo, non-node_modules frame
+//     actions: [{ t, type, target, value, url }], // the user's last 15 actions, oldest first
+//     request: { method, path, body, headers: { 'content-type' } }
 //   }
-//
-// Statuses (set by the patcher after we insert "open"):
-//   open → reproducing → patching → verifying → fixed   (or failed / not_reproducible)
-// While an incident with the same fingerprint is still active, new crashes only bump
-// `occurrences`, so five clicks on "Apply" still produce one incident and one PR.
 
-const config = require('./config');
 const { collections } = require('./db');
-const { fingerprint } = require('./parse');
+const { findTopFrame, parseActions } = require('./parse');
 
-const ACTIVE_STATUSES = ['open', 'reproducing', 'patching', 'verifying'];
-
-// Crashes with the same fingerprint are handled one at a time, so two quick
-// clicks can't both decide "no open incident yet" and insert twice.
-const locks = new Map();
-function withLock(key, fn) {
-  const previous = locks.get(key) || Promise.resolve();
-  const run = previous.catch(() => {}).then(fn);
-  const tail = run.catch(() => {});
-  locks.set(key, tail);
-  tail.then(() => {
-    if (locks.get(key) === tail) locks.delete(key);
-  });
-  return run;
+function newIncidentId() {
+  return `incident-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
-async function nextIncidentId(counters) {
-  const doc = await counters.findOneAndUpdate(
-    { _id: 'incident' },
-    { $inc: { seq: 1 } },
-    { upsert: true, returnDocument: 'after' }
-  );
-  return 'incident-' + String(doc.seq).padStart(4, '0');
-}
-
-// crash: { source, error: { name, message, stack }, topFrame, request, actions }
-// returns { isNew, incident }
-async function recordIncident(crash) {
-  const fp = fingerprint(crash.error, crash.topFrame);
-
-  return withLock(fp, async () => {
-    const { incidents, counters } = await collections();
-    const now = new Date();
-
-    const existing = await incidents.findOneAndUpdate(
-      { fingerprint: fp, status: { $in: ACTIVE_STATUSES } },
-      { $inc: { occurrences: 1 }, $set: { lastSeenAt: now } },
-      { sort: { createdAt: -1 }, returnDocument: 'after' }
-    );
-    if (existing) return { isNew: false, incident: existing };
-
-    const incident = buildIncident(crash, await nextIncidentId(counters), now);
-    await incidents.insertOne(incident);
-    return { isNew: true, incident };
-  });
-}
-
-function buildIncident(crash, incidentId, now = new Date()) {
-  const top = crash.topFrame;
+// err: the thrown error. req: the Express request (or anything with method/path/originalUrl/body/get()).
+function buildIncident(err, req) {
+  const stack = String(err && err.stack);
+  const top = findTopFrame(stack);
+  const routePath = req.route && req.route.path != null ? req.route.path : req.path;
   return {
-    _id: incidentId, // readable id for the dashboard; lib/mongodb.js idFilter() accepts strings
-    incidentId,
+    incidentId: newIncidentId(),
     status: 'open',
-    createdAt: now,
-    route: crash.request ? `${crash.request.method} ${crash.request.path}` : crash.source,
+    createdAt: new Date(),
+    route: `${req.method} ${routePath}`,
     error: {
-      message: `${crash.error.name}: ${crash.error.message}`,
-      name: crash.error.name,
-      stack: crash.error.stack,
-      file: top ? top.file : null, // patcher's fallback if it can't resolve the stack
+      message: String(err && err.message),
+      stack,
+      file: top ? top.file : null,
       line: top ? top.line : null,
     },
-    actions: crash.actions, // the user's last 15 actions, oldest first
-    request: crash.request,
-    fingerprint: fingerprint(crash.error, top),
-    occurrences: 1,
-    lastSeenAt: now,
-    updatedAt: now,
-    source: crash.source,
-    topFrame: top,
-    repo: config.repo,
-    app: config.app,
+    actions: parseActions(req.get('x-autofix-actions')),
+    request: {
+      method: req.method,
+      path: req.originalUrl, // includes the query string
+      body: req.body ?? null,
+      headers: { 'content-type': req.get('content-type') }, // only safe headers
+    },
   };
 }
 
-async function updateWebhookStatus(incidentId, webhook) {
+async function insertIncident(incident) {
   const { incidents } = await collections();
-  await incidents.updateOne({ incidentId }, { $set: { webhook } });
+  await incidents.insertOne(incident);
+  return incident;
 }
 
 async function findIncident(incidentId) {
@@ -103,4 +55,4 @@ async function findIncident(incidentId) {
   return incidents.findOne({ incidentId });
 }
 
-module.exports = { ACTIVE_STATUSES, recordIncident, buildIncident, updateWebhookStatus, findIncident };
+module.exports = { buildIncident, insertIncident, findIncident, newIncidentId };

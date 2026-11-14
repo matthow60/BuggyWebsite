@@ -1,29 +1,25 @@
-// OPTIONAL. AutomatedFix's patcher does not need this: it watches the incidents collection
-// with a MongoDB change stream and starts on every insert with status "open". This only
-// runs when WEBHOOK_URL is set, for anyone who wants a push notification as well.
+// OPTIONAL. The AutoFix engine does not need this: it reads open incidents from MongoDB.
+// Only runs when WEBHOOK_URL is set, for anyone who wants a push notification as well.
 //
 // POST $WEBHOOK_URL
 //   headers: content-type: application/json, x-webhook-secret: $WEBHOOK_SECRET (if set)
 //   body:    { event: "incident.created", incidentId, incident: { ...full document } }
 //
-// Tries once, then retries up to 3 times with 1s / 2s / 4s backoff. If every attempt
-// fails, the incident stays "open" and can be re-sent with `npm run retry-webhook incident-0042`.
+// Tries once, then retries up to 3 times with 1s / 2s / 4s backoff.
 
 const config = require('./config');
-const { updateWebhookStatus } = require('./incidents');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function toPayload(incident) {
-  const { _id, webhook, ...rest } = incident;
+  const { _id, ...rest } = incident;
   return { event: 'incident.created', incidentId: incident.incidentId, incident: rest };
 }
 
 async function deliverWebhook(incident) {
+  if (!config.webhookUrl) return false;
+
   const { incidentId } = incident;
-
-  if (!config.webhookUrl) return false; // normal: the patcher uses the change stream
-
   const body = JSON.stringify(toPayload(incident));
   const headers = { 'content-type': 'application/json' };
   if (config.webhookSecret) headers['x-webhook-secret'] = config.webhookSecret;
@@ -41,19 +37,17 @@ async function deliverWebhook(incident) {
         signal: AbortSignal.timeout(config.webhookTimeoutMs),
       });
       if (res.ok) {
-        console.log(`[capture] ${incidentId}: webhook delivered (attempt ${attempt})`);
-        await updateWebhookStatus(incidentId, { status: 'delivered', attempts: attempt, deliveredAt: new Date() });
+        console.log(`[crash-report] ${incidentId}: webhook delivered (attempt ${attempt})`);
         return true;
       }
       lastError = `HTTP ${res.status}`;
     } catch (err) {
       lastError = err.message;
     }
-    console.warn(`[capture] ${incidentId}: webhook attempt ${attempt}/${totalAttempts} failed: ${lastError}`);
+    console.warn(`[crash-report] ${incidentId}: webhook attempt ${attempt}/${totalAttempts} failed: ${lastError}`);
   }
 
-  console.error(`[capture] ${incidentId}: webhook gave up. Retry by hand (inside server/): npm run retry-webhook ${incidentId}`);
-  await updateWebhookStatus(incidentId, { status: 'failed', attempts: totalAttempts, lastError });
+  console.error(`[crash-report] ${incidentId}: webhook gave up. Retry (inside server/): npm run retry-webhook ${incidentId}`);
   return false;
 }
 

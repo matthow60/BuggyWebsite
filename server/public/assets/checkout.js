@@ -12,7 +12,7 @@ function renderSummary(cart) {
     .map((i) => `<div class="summary-row"><span>${Mavs.escapeHtml(i.name)} · ${Mavs.escapeHtml(i.size)} × ${i.qty}</span><strong>${Mavs.money(i.price * i.qty)}</strong></div>`)
     .join('');
   document.getElementById('summary').innerHTML = `
-    ${lines || '<p class="hint" style="color:var(--muted);margin:0 0 8px">Your cart is empty. <a href="/shop">Go shopping</a>.</p>'}
+    ${lines || '<p class="hint" style="color:var(--muted);margin:0 0 8px">Your cart is empty. <a href="/shop" data-testid="go-shopping-link">Go shopping</a>.</p>'}
     <div class="divider" style="margin:10px 0"></div>
     <div class="summary-row"><span>Subtotal</span><strong>${Mavs.money(cart.subtotal)}</strong></div>
     ${cart.discount ? `<div class="summary-row discount"><span>Discount (${Mavs.escapeHtml(cart.promo.code)})</span><strong>−${Mavs.money(cart.discount)}</strong></div>` : ''}
