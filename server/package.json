@@ -1,0 +1,16 @@
+{
+  "name": "mavs-merch-store",
+  "version": "1.0.0",
+  "description": "UTA Mavs Merch Store - intentionally buggy demo target app for HackUTA",
+  "main": "index.js",
+  "private": true,
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "4.21.2"
+  }
+}
