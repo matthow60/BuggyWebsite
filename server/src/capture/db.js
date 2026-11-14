@@ -1,4 +1,4 @@
-// Lazy MongoDB connection shared by the crash catcher and the scripts.
+// One shared MongoClient for crash reporting (created on first use, then reused).
 const { MongoClient } = require('mongodb');
 const config = require('./config');
 
@@ -7,26 +7,16 @@ let ready = null;
 
 function connect() {
   if (!config.mongoUri) {
-    return Promise.reject(new Error('MONGODB_URI is not set'));
+    return Promise.reject(new Error('CRASH_REPORT_MONGODB_URI is not set'));
   }
   if (!ready) {
     client = new MongoClient(config.mongoUri, {
-      appName: 'mavs-merch-capture',
+      appName: 'buggywebsite-crash-report',
       serverSelectionTimeoutMS: 5000,
-      ignoreUndefined: true,
     });
     ready = client
       .connect()
-      .then(async () => {
-        const db = client.db(config.dbName);
-        // Default index names on purpose: the patcher creates { incidentId: 1 } unique too,
-        // and a different name for the same index would make one of us fail.
-        await db
-          .collection(config.incidentsCollection)
-          .createIndexes([{ key: { incidentId: 1 }, unique: true }, { key: { fingerprint: 1, status: 1 } }, { key: { createdAt: -1 } }])
-          .catch((e) => console.warn('[capture] could not create indexes (continuing):', e.message));
-        return db;
-      })
+      .then(() => client.db(config.dbName))
       .catch((err) => {
         ready = null; // let the next crash try again
         throw err;
@@ -37,10 +27,7 @@ function connect() {
 
 async function collections() {
   const db = await connect();
-  return {
-    incidents: db.collection(config.incidentsCollection),
-    counters: db.collection('counters'),
-  };
+  return { incidents: db.collection(config.incidentsCollection) };
 }
 
 async function close() {

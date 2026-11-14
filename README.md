@@ -45,69 +45,62 @@ curl -X POST localhost:3000/api/cart/add -H "content-type: application/json" \
 2. **Checkout page**: leave "Friends splitting with you" blank and click **Calculate split**.
 3. **Shop page**: on *Mavs Classic Tee*, pick **XXL** (or no size) and click **Add to cart**.
 
-A 500 shows a "Something went wrong — our team has been notified (incident-0042)" toast, and the full stack is printed in the server console.
+A 500 shows a "Something went wrong — our team has been notified." toast, and the full stack is printed in the server console.
 
 Promo codes: `MAVS10` (10% off), `MAVS20` (20% off), `BLUEORANGE` (20% off), `GOMAVS` ($15 off orders of $75 or more).
 
-## Crash capture (Member 1) → AutomatedFix
+## Crash reporting → AutoFix engine
 
 ```
 user clicks → recorder.js keeps the last 15 actions → /api call returns 500
-  → crashCatcher.js saves an incident (status "open") in MongoDB  hackuta.incidents
-  → AutomatedFix patcher sees the insert (change stream), replays the actions, patches, opens a PR
-  → AutomatedFix dashboard reads the same document
+  → crashCatcher.js answers 500, then inserts an incident (status "open") into MongoDB hackuta.incidents
+  → the AutoFix engine picks it up, replays the actions, patches, opens a PR
 ```
 
 | Piece | File | What it does |
 |---|---|---|
-| **Records the user's last 15 actions** | `server/public/sdk/recorder.js` (section marked *RECORDS THE USER'S LAST 15 ACTIONS*) | Keeps the last 15 navigate/click/input actions in `sessionStorage`, attached to every `/api/*` call as the `X-User-Actions` header. Shows "our team has been notified (incident-0042)" on a 5xx. |
-| Saves them | `server/src/capture/parse.js` (section marked *USER'S LAST 15 ACTIONS*) | Decodes and cleans the header (max 15) before saving. |
-| Crash catcher | `server/src/middleware/crashCatcher.js` | Last Express middleware. Saves the incident and answers `500 { error, incidentId }`. |
-| Helpers | `server/src/capture/` | Config, MongoDB connection, stack/request parsing, dedupe, optional webhook. |
+| Browser recorder | `server/public/sdk/recorder.js` | Keeps the last 15 actions (`navigate`, `click`, `input`, `select`, `check`, `uncheck`, `submit`, `keypress` for Enter) in `sessionStorage` and sends them with every `/api/*` fetch in the `x-autofix-actions` header (JSON). Passwords are recorded as `***`. |
+| Crash catcher | `server/src/middleware/crashCatcher.js` | Last Express middleware. Responds 500, then fire-and-forget inserts one incident per crash. Never throws, never delays the response. |
+| Helpers | `server/src/capture/` | Config, the shared MongoClient, stack parsing, incident builder, optional webhook. |
 
-**Turning it on.** Copy `server/.env.example` to `server/.env` and set `CAPTURE_ENABLED=1` plus the team's `MONGODB_URI`. Capture is **forced off when the AutomatedFix patcher starts the app** (it detects `TARGET_REPO` / `LLM_MODE` / … in the environment), so replays never create new incidents.
+**Turning it on.** Copy `server/.env.example` to `server/.env` (or `.env` at the repo root; both are git-ignored) and set `CRASH_REPORT_MONGODB_URI` to the Atlas connection string.
+Reporting is off when that variable is empty **or when `AUTOFIX_REPLAY` is set**. It deliberately does not read `MONGODB_URI`: the engine passes its own `MONGODB_URI` to the replay copy of this app, and reporting from replays would loop forever.
 
-**Every clickable element needs a `data-testid`.** The patcher replays actions by clicking `target` selectors, and `[data-testid="..."]` is the only kind that stays stable. Add `data-track="Readable label"` to control the human label.
+**Every interactive element needs a `data-testid`.** The engine replays actions by `target` selector, and `[data-testid="..."]` is the only kind that stays stable.
 
-### Incident document (`hackuta.incidents`), the shape AutomatedFix reads
+### Incident document (`hackuta.incidents`)
 
 ```js
 {
-  _id: 'incident-0042', incidentId: 'incident-0042',   // counter in hackuta.counters { _id: 'incident', seq }
-  status: 'open',              // then the patcher sets: reproducing → patching → verifying → fixed | failed | not_reproducible
-  createdAt, route: 'POST /api/cart/promo',
-  error: { message: 'TypeError: Reduce of empty array…', name, stack, file: 'server/src/services/pricing.js', line: 15 },
-  actions: [                   // the user's last 15 actions, oldest first
-    { t: 1794690435150, type: 'click', target: '[data-testid="promo-apply"]', value: null, url: '/cart', label: 'Apply promo code' },
-    { t: …, type: 'input', target: '[data-testid="promo-input"]', value: 'MAVS20', url: '/cart', label: 'Promo code' },
-    { t: …, type: 'navigate', target: null, value: null, url: '/cart', label: 'Cart · Mavs Merch' },
+  incidentId: 'incident-1794697366281-ow9w',
+  status: 'open',                       // the engine only picks up "open"
+  createdAt: Date,
+  route: 'POST /cart/promo',            // `${req.method} ${req.route?.path ?? req.path}`
+  error: {
+    message: 'Reduce of empty array with no initial value',
+    stack: 'TypeError: ...',            // raw Node stack
+    file: 'server/src/services/pricing.js',   // top in-repo, non-node_modules frame
+    line: 15
+  },
+  actions: [                            // last 15, oldest first
+    { t: 1794697360000, type: 'input', target: '[data-testid="promo-input"]', value: 'MAVS10', url: 'http://localhost:3000/cart' },
+    { t: 1794697361000, type: 'click', target: '[data-testid="promo-apply"]', value: null, url: 'http://localhost:3000/cart' }
   ],
-  request: { method, path, query, body, headers: { 'content-type', 'user-agent', 'x-session-id' }, sessionId },
-  fingerprint, occurrences, lastSeenAt, updatedAt, source, topFrame, repo: { url, commit, branch }, app,
-  fix: { … }, summary: { … }   // written later by the patcher and the dashboard
+  request: { method: 'POST', path: '/api/cart/promo', body: { code: 'MAVS10' }, headers: { 'content-type': 'application/json' } }
 }
 ```
-
-Repeat crashes of the same bug while it is `open`/`reproducing`/`patching`/`verifying` only bump `occurrences`: five clicks on "Apply" give one incident and one PR.
-
-### Check that the actions reach MongoDB
-
-```bash
-cd server
-npm run check-actions            # newest incident: lists every stored action and flags problems
-npm run check-actions incident-0042   # a specific incident
-```
-
-Or open `server/scripts/check-actions.mongodb.js` in VS Code with the MongoDB extension connected and click Run.
 
 ### Scripts (run inside `server/`)
 
 ```bash
-npm run check-actions                     # show the stored actions of the newest incident
-npm run reset-demo                        # delete incidents, next ID = incident-0042, check bugs still crash on main
+npm run check-actions                     # show the stored actions of the newest incident and flag problems
+npm run check-actions <incidentId>        # a specific incident
+npm run reset-demo                        # delete all incidents, check the bugs still crash on main
 npm run reset-demo -- --check-only        # only check that the bugs are still there
 npm run seed-incident                     # backup demo incident (bug 1, 15 replayable steps)
 npm run seed-incident -- --out seed.json  # same incident as a JSON file, no database needed
 npm run mock-webhook                      # optional: fake webhook receiver on :4000
-npm run retry-webhook incident-0042            # optional: re-send a webhook (only if WEBHOOK_URL is used)
+npm run retry-webhook <incidentId>        # optional: re-send a webhook (only if WEBHOOK_URL is used)
 ```
+
+Or open `server/scripts/check-actions.mongodb.js` in VS Code with the MongoDB extension connected and click Run.
