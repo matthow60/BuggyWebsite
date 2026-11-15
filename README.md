@@ -1,6 +1,6 @@
 # Mavs Merch Store (buggy demo target)
 
-A small UTA Mavs merch store built with Node and Express plus plain HTML/JS. It has **three deliberate server crashes**, used for the HackUTA auto-patcher demo.
+A small UTA Mavs merch store built with Node and Express plus plain HTML/JS. It has **five deliberate server crashes**, used for the HackUTA auto-patcher demo.
 
 ## Run
 
@@ -22,6 +22,8 @@ Each bug lives in its own file under `server/src/services/`, and each fix is 1â€
 | 1 | `POST /api/cart/promo` | `pricing.js` | `TypeError: Reduce of empty array with no initial value` |
 | 2 | `POST /api/checkout/split` | `split.js` | `TypeError: Cannot read properties of undefined (reading 'map')` |
 | 3 | `POST /api/cart/add` | `inventory.js` | `TypeError: Cannot read properties of undefined (reading 'stock')` |
+| 4 | `POST /api/checkout/place` | `contact.js` | `TypeError: Cannot read properties of undefined (reading 'trim')` |
+| 5 | `POST /api/cart/shipping` | `shipping.js` | `RangeError: Invalid time value` |
 
 ### Reproduce from the request alone
 
@@ -37,6 +39,14 @@ curl -X POST localhost:3000/api/checkout/split -H "content-type: application/jso
 # 3. Add a size the product doesn't carry (or send no size at all)
 curl -X POST localhost:3000/api/cart/add -H "content-type: application/json" \
   -H "x-session-id: repro-3" -d '{"productId":"classic-tee","size":"XXL"}'
+
+# 4. Place an order with the email left blank (email omitted; crashes even with an empty cart)
+curl -X POST localhost:3000/api/checkout/place -H "content-type: application/json" \
+  -H "x-session-id: repro-4" -d '{"name":"Maverick"}'
+
+# 5. Delivery estimate for a ZIP outside Texas (we only list prefixes 750-799)
+curl -X POST localhost:3000/api/cart/shipping -H "content-type: application/json" \
+  -H "x-session-id: repro-5" -d '{"zip":"10001"}'
 ```
 
 ### Reproduce in the UI
@@ -44,6 +54,8 @@ curl -X POST localhost:3000/api/cart/add -H "content-type: application/json" \
 1. **Cart page** with an empty cart: type `MAVS10` and click **Apply**.
 2. **Checkout page**: leave "Friends splitting with you" blank and click **Calculate split**.
 3. **Shop page**: on *Mavs Classic Tee*, pick **XXL** (or no size) and click **Add to cart**.
+4. **Checkout page** (with something in the cart): leave **UTA email** blank and click **Place order**.
+5. **Cart page**: type `10001` (any non-Texas ZIP) under **Delivery estimate** and click **Estimate**. A Texas ZIP like `76019` works.
 
 A 500 shows a "Something went wrong â€” our team has been notified." toast, and the full stack is printed in the server console.
 

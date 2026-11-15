@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Resets the demo: deletes all incidents and checks that the three bugs still crash,
+// Resets the demo: deletes all incidents and checks that the five bugs still crash,
 // both in this checkout and on origin/main.
 //
 //   npm --prefix server run reset-demo              (asks before deleting)
@@ -36,6 +36,18 @@ const BUGS = [
     run: (m) => m.checkStock({ name: 'Tee', sizes: [{ label: 'S', stock: 1 }] }, 'XXL', 1),
     expect: "Cannot read properties of undefined (reading 'stock')",
   },
+  {
+    file: 'contact.js',
+    name: 'Bug 4: place order with blank email',
+    run: (m) => m.normalizeEmail(undefined),
+    expect: "Cannot read properties of undefined (reading 'trim')",
+  },
+  {
+    file: 'shipping.js',
+    name: 'Bug 5: delivery estimate outside Texas',
+    run: (m) => m.estimateDelivery('10001'),
+    expect: 'Invalid time value',
+  },
 ];
 
 function loadModuleFromSource(source, label) {
@@ -54,7 +66,7 @@ function stillCrashes(bug, mod) {
     bug.run(mod);
     return false;
   } catch (e) {
-    return e instanceof TypeError && e.message === bug.expect;
+    return e instanceof Error && e.message === bug.expect;
   }
 }
 

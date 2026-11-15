@@ -103,4 +103,23 @@ document.getElementById('promo-form').addEventListener('submit', async (e) => {
   }
 });
 
+// Bug 5: a ZIP code outside Texas crashes POST /api/cart/shipping.
+document.getElementById('zip-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const zip = document.getElementById('zip').value;
+  const out = document.getElementById('zip-result');
+  const btn = e.target.querySelector('button[type=submit]');
+  btn.disabled = true;
+  out.textContent = '';
+  try {
+    const est = await Mavs.api('/cart/shipping', { method: 'POST', body: { zip } });
+    const when = new Date(est.arrivesOn + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+    out.textContent = `Arrives by ${when} (${est.days} day${est.days === 1 ? '' : 's'}) to ${est.zip}`;
+  } catch (err) {
+    Mavs.showError(err);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 load();

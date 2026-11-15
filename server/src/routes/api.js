@@ -4,6 +4,8 @@ const { summarize } = require('../services/cart');
 const { applyPromo } = require('../services/pricing');
 const { splitPayment } = require('../services/split');
 const { checkStock } = require('../services/inventory');
+const { normalizeEmail } = require('../services/contact');
+const { estimateDelivery } = require('../services/shipping');
 
 const router = express.Router();
 
@@ -88,6 +90,15 @@ router.delete('/cart/promo', (req, res) => {
   res.json(summarize(cart));
 });
 
+// Bug 5 lives in services/shipping.js
+router.post('/cart/shipping', (req, res) => {
+  const zip = String((req.body && req.body.zip) || '').trim();
+  if (!/^\d{5}$/.test(zip)) {
+    return res.status(400).json({ error: 'Enter a 5-digit ZIP code.' });
+  }
+  res.json(estimateDelivery(zip));
+});
+
 // Bug 2 lives in services/split.js
 router.post('/checkout/split', (req, res) => {
   const cart = getCart(getSessionId(req));
@@ -96,11 +107,13 @@ router.post('/checkout/split', (req, res) => {
   res.json({ total, ...split });
 });
 
+// Bug 4 lives in services/contact.js
 router.post('/checkout/place', (req, res) => {
   const sessionId = getSessionId(req);
   const cart = getCart(sessionId);
   const summary = summarize(cart);
-  const { name, email, payers } = req.body || {};
+  const { name, payers } = req.body || {};
+  const email = normalizeEmail(req.body && req.body.email);
 
   if (summary.items.length === 0) {
     return res.status(400).json({ error: 'Your cart is empty.' });

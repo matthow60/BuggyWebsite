@@ -24,6 +24,14 @@
           </div>
           <div id="promo-applied"></div>
         </form>
+        <form class="field" id="zip-form" data-testid="zip-form" autocomplete="off">
+          <label for="zip">Delivery estimate</label>
+          <div class="inline">
+            <input class="input" id="zip" data-testid="zip-input" inputmode="numeric" maxlength="5" placeholder="ZIP, e.g. 76019" />
+            <button class="btn secondary" type="submit" data-testid="zip-estimate" data-track="Estimate delivery">Estimate</button>
+          </div>
+          <div id="zip-result" class="hint"></div>
+        </form>
         <div class="divider"></div>
         <div id="summary"></div>
         <a class="btn block" href="/checkout" data-testid="checkout-link" data-track="Continue to checkout" style="display:block;text-align:center;text-decoration:none;margin-top:16px">Continue to checkout</a>

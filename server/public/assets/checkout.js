@@ -56,7 +56,8 @@ document.getElementById('place-btn').addEventListener('click', async (e) => {
       method: 'POST',
       body: {
         name: document.getElementById('name').value.trim(),
-        email: document.getElementById('email').value.trim(),
+        // Blank field -> email is undefined (dropped from the JSON body). That's bug 4.
+        email: document.getElementById('email').value.trim() || undefined,
         payers: readPayers(),
       },
     });
