@@ -1,10 +1,10 @@
 // Splits an order total between you and the friends you list.
 
-function splitPayment(total, payers) {
-  const friends = payers.map((name) => String(name).trim()).filter(Boolean);
+function splitPayment(total = 0, payers = []) {
+  const friends = (Array.isArray(payers) ? payers : []).map((name) => String(name).trim()).filter(Boolean);
   const people = friends.length + 1; // you + friends
 
-  const cents = Math.round(total * 100);
+  const cents = Math.round((total || 0) * 100);
   const share = Math.floor(cents / people);
   const leftover = cents - share * people; // you cover the odd cents
 
