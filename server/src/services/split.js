@@ -1,7 +1,7 @@
 // Splits an order total between you and the friends you list.
 
 function splitPayment(total, payers) {
-  const friends = payers.map((name) => String(name).trim()).filter(Boolean);
+  const friends = (payers || []).map((name) => String(name).trim()).filter(Boolean);
   const people = friends.length + 1; // you + friends
 
   const cents = Math.round(total * 100);
