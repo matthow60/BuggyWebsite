@@ -3,7 +3,7 @@
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function normalizeEmail(email) {
-  const clean = email.trim().toLowerCase();
+  const clean = (email || '').trim().toLowerCase();
   return EMAIL_RE.test(clean) ? clean : null;
 }
 
