@@ -12,12 +12,12 @@ TRANSIT_DAYS['760'] = 1; // Arlington
 function estimateDelivery(zip, now = new Date()) {
   const clean = String(zip || '').trim();
   const days = /^\d{5}$/.test(clean) ? TRANSIT_DAYS[clean.slice(0, 3)] : undefined;
-  const arrives = new Date(now.getTime() + days * DAY_MS);
+  const arrives = days !== undefined ? new Date(now.getTime() + days * DAY_MS) : null;
 
   return {
     zip: clean,
     days,
-    arrivesOn: arrives.toISOString().slice(0, 10),
+    arrivesOn: arrives ? arrives.toISOString().slice(0, 10) : null,
   };
 }
 
