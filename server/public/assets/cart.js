@@ -113,6 +113,10 @@ document.getElementById('zip-form').addEventListener('submit', async (e) => {
   out.textContent = '';
   try {
     const est = await Mavs.api('/cart/shipping', { method: 'POST', body: { zip } });
+    if (!est.arrivesOn) {
+      out.textContent = est.error || 'No delivery estimate for that ZIP.';
+      return;
+    }
     const when = new Date(est.arrivesOn + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
     out.textContent = `Arrives by ${when} (${est.days} day${est.days === 1 ? '' : 's'}) to ${est.zip}`;
   } catch (err) {

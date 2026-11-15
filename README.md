@@ -44,7 +44,7 @@ curl -X POST localhost:3000/api/cart/add -H "content-type: application/json" \
 curl -X POST localhost:3000/api/checkout/place -H "content-type: application/json" \
   -H "x-session-id: repro-4" -d '{"name":"Maverick"}'
 
-# 5. Delivery estimate for a ZIP outside Texas (we only list prefixes 750-799)
+# 5. Delivery estimate for a ZIP it doesn't know: outside Texas, malformed ("abc"), or blank
 curl -X POST localhost:3000/api/cart/shipping -H "content-type: application/json" \
   -H "x-session-id: repro-5" -d '{"zip":"10001"}'
 ```
@@ -55,7 +55,7 @@ curl -X POST localhost:3000/api/cart/shipping -H "content-type: application/json
 2. **Checkout page**: leave "Friends splitting with you" blank and click **Calculate split**.
 3. **Shop page**: on *Mavs Classic Tee*, pick **XXL** (or no size) and click **Add to cart**.
 4. **Checkout page** (with something in the cart): leave **UTA email** blank and click **Place order**.
-5. **Cart page**: type `10001` (any non-Texas ZIP) under **Delivery estimate** and click **Estimate**. A Texas ZIP like `76019` works.
+5. **Cart page**: under **Delivery estimate**, type `10001` (any non-Texas ZIP), a bad ZIP like `abc`, or nothing, and click **Estimate**. A Texas ZIP like `76019` works.
 
 A 500 shows a "Something went wrong — our team has been notified." toast, and the full stack is printed in the server console.
 

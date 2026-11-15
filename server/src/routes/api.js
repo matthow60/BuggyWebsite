@@ -90,13 +90,9 @@ router.delete('/cart/promo', (req, res) => {
   res.json(summarize(cart));
 });
 
-// Bug 5 lives in services/shipping.js
+// Bug 5 lives in services/shipping.js (any ZIP it doesn't know: non-Texas, letters, blank)
 router.post('/cart/shipping', (req, res) => {
-  const zip = String((req.body && req.body.zip) || '').trim();
-  if (!/^\d{5}$/.test(zip)) {
-    return res.status(400).json({ error: 'Enter a 5-digit ZIP code.' });
-  }
-  res.json(estimateDelivery(zip));
+  res.json(estimateDelivery(req.body && req.body.zip));
 });
 
 // Bug 2 lives in services/split.js
