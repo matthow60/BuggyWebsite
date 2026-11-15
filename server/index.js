@@ -24,7 +24,9 @@ app.use('/api', apiRoutes);
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 
 app.use('/sdk', express.static(path.join(PUBLIC_DIR, 'sdk')));
-app.use('/assets', express.static(path.join(PUBLIC_DIR, 'assets'), { maxAge: '1h' }));
+// No long-lived caching: browsers revalidate (cheap 304s), so pulling a new branch or a fix
+// never leaves a page running an old script next to new HTML.
+app.use('/assets', express.static(path.join(PUBLIC_DIR, 'assets')));
 app.get('/', (req, res) => res.redirect('/shop'));
 for (const page of ['shop', 'cart', 'checkout']) {
   app.get(`/${page}`, (req, res) => res.sendFile(path.join(PUBLIC_DIR, `${page}.html`)));
