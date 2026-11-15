@@ -12,7 +12,7 @@ function round2(n) {
 }
 
 function subtotal(items) {
-  return items.map((item) => item.price * item.qty).reduce((a, b) => a + b);
+  return items.map((item) => item.price * item.qty).reduce((a, b) => a + b, 0);
 }
 
 function discountFor(promo, amount) {
