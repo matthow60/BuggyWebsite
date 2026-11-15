@@ -1,7 +1,15 @@
 // Checks that a product has enough stock in the requested size.
 
 function checkStock(product, size, qty) {
-  const variant = product.sizes.find((s) => s.label === size);
+  if (!product || !product.sizes) {
+    return { ok: false, reason: 'Product or sizes not found.' };
+  }
+
+  const variant = product.sizes.find((s) => s.label === size || s.size === size);
+
+  if (!variant) {
+    return { ok: false, reason: `${product.name} is not available in ${size}.` };
+  }
 
   if (variant.stock === 0) {
     return { ok: false, reason: `${product.name} is sold out in ${size}.` };
